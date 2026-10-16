@@ -82,6 +82,18 @@ docker build --pull \
 docker build --secret id=netrc,src="$HOME/.netrc" -t eip-platform-verify:2026-10-16 .
 ```
 
+## 在 GitHub Actions 里验证（不需要本地容器运行时）
+
+如果手边没有 Docker / Podman 运行时，源码仓库里配了两个工作流，**看 Actions 结论即可**：
+
+| 工作流 | 平台 | 动作 | 目的 |
+| --- | --- | --- | --- |
+| `verify-in-container.yml` | `linux/amd64` | 构建 → `load` → **运行 `scripts/check.sh`**（`docker run --rm --network=none`） | 验证：退出码与日志尾部进 Job Summary，完整日志作为 `verify-log` artifact 保留 |
+| `publish-image.yml` | `linux/amd64` + `linux/arm64` | 构建 → 推 GHCR（私有包） | 分发 |
+
+二者都用仓库自带的 `GITHUB_TOKEN`（天然带 `packages:write`），**不需要扩容任何个人 PAT 作用域**，
+也不需要本地上传镜像。详见 `docs/verification-docker.md` 第 10 节。
+
 ## 归属
 
 本仓库是私有项目 `EIP-Platform` 的配套构建资产。使用前请确认与该项目相关的授权。

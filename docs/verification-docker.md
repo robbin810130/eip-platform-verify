@@ -45,6 +45,18 @@ Python 报告测试与 CLI 比对、`npm ci` + Web 单元测试 + Web 构建。�
 
 架构：`linux/amd64` 与 `linux/arm64` 均可构建（Node 分段选择架构，其余组件自动匹配）。
 
+> ⚠️ **已知不一致（未自行收敛，留待决定）**：本镜像的 Node.js 是 `22.23.3`，
+> 而 `.github/workflows/ci.yml` 用的是 `node-version: '24'`；仓库自带的部署镜像
+> `deploy/orbstack/Dockerfile` 用的是 `node:22-bookworm-slim` —— 仓库内部本就有 22 / 24 两种口径。
+> 现按交付规格书取 **22**。若要改成与 CI 的 24 完全对齐：
+>
+> ```sh
+> docker build --pull --build-arg NODE_VERSION=24.22.0 -t eip-platform-verify:2026-10-16 .
+> docker run --rm --network=none eip-platform-verify:2026-10-16   # 必须重新验收
+> ```
+>
+> 受影响的是 `npm ci`、`npm test`（`node --test`）与 `vite build` 三步。
+
 ## 3. 构建与运行
 
 在**仓库根目录**执行（build context 必须是仓库根）：
@@ -237,7 +249,8 @@ Bundle 与 trace 契约 Schema 校验、`scripts` 单元测试、文档链接检
 docker image rm eip-platform-verify:2026-10-16
 ```
 
-新增文件清单：`Dockerfile`、`docker/entrypoint.sh`、`docker-compose.verify.yml`、`docs/verification-docker.md`。
+新增文件清单：`Dockerfile`、`docker/entrypoint.sh`、`docker-compose.verify.yml`、`docs/verification-docker.md`、
+`.github/workflows/publish-image.yml`、`.github/workflows/verify-in-container.yml`。
 
 被修改的既有文件只有两个，且都是**追加式**改动：
 
@@ -245,3 +258,57 @@ docker image rm eip-platform-verify:2026-10-16
 | --- | --- | --- |
 | `.dockerignore` | 只扩充白名单（新增 `scripts/`、`agents/`、`tests/`、`docs/`、`tasks/`、`docker/`、`fixtures/`、根级锁文件与 manifest），并补充排除未跟踪的本地残留目录 | `deploy/orbstack/Dockerfile` 的构建不受影响，只是 build context 略变大；未删除任何原有条目 |
 | `docs/README.md` | 技术文档导航新增一行指向本文 | 纯文档 |
+
+## 10. 在 GitHub Actions 里验证（不需要本地容器运行时）
+
+本地或临时环境可能**没有 Docker / Podman 运行时**，这时用
+[`.github/workflows/verify-in-container.yml`](../.github/workflows/verify-in-container.yml)：
+它在 runner 上构建 `linux/amd64` 镜像、`load` 进本地镜像仓库，然后执行
+
+```sh
+docker run --rm --network=none eip-platform-verify:ci
+```
+
+把退出码、日志尾部写进 Job Summary，完整日志作为 artifact `verify-log` 保留 14 天。
+**结论与本地 `docker run --rm --network=none` 完全等价**，只是执行位置换成了 runner。
+
+触发方式：
+
+| 方式 | 条件 |
+| --- | --- |
+| 自动 | push 到 `main` 且改动命中 `Dockerfile` / `.dockerignore` / `docker/**` / `scripts/**` / `contracts/**` / `crates/**` / `adapters/**` / `apps/**` / `agents/**` / `tests/**` / `fixtures/**` / 锁文件 |
+| 手动 | Actions → `verify-in-container` → Run workflow |
+
+与推镜像工作流的分工：
+
+| 工作流 | 平台 | 动作 | 目的 |
+| --- | --- | --- | --- |
+| `verify-in-container.yml` | `linux/amd64` | 构建 → `load` → **运行 check.sh** | 验证（拿到 pass/fail） |
+| `publish-image.yml` | `linux/amd64` + `linux/arm64` | 构建 → 推 GHCR | 分发（拿到可拉取的镜像） |
+
+两者都不需要任何本地容器运行时；`publish-image.yml` 用仓库自带的 `GITHUB_TOKEN`
+（天然带 `packages:write`），不需要扩容个人 PAT 作用域。
+
+## 11. 关于另一份 `Dockerfile.eip-verify` 草案（结论：未采用）
+
+曾评估过一份基于 `mcr.microsoft.com/dotnet/sdk:10.0.401-bookworm-slim` 的轻量草案
+（apt 装 `nodejs npm`、rustup 装 1.90.0、`COPY . .` 后 `npm ci --ignore-scripts`、`CMD bash`）。
+**它在构建阶段就会失败，无法作为验证载体**，因此未采用。证据：
+
+| # | 问题 | 证据 | 后果 |
+| --- | --- | --- | --- |
+| 1 | 基础镜像 tag 不存在 | `mcr.microsoft.com/v2/dotnet/sdk/tags/list` 中 `10.0.401` 有 40 个变体（`noble`/`alpine3.23`/`azurelinux3.0`/裸 tag…），**没有 `bookworm`、也没有任何 `slim`** | `docker build` 立刻失败（manifest unknown） |
+| 2 | `RUN npm ci` 落在没有 `package.json` 的目录 | 仓库根目录**没有** `package.json`（Web 应用在 `apps/web-console`），而 `check.sh` 第 21 行用的是 `npm --prefix apps/web-console ci` | 构建期失败 |
+| 3 | 从不安装 Python 契约校验依赖 | `check.sh` 有 11 处 Python 调用，其中 6 个脚本 `import jsonschema`（`requirements-dev.txt` 固定 `jsonschema==4.25.1`）；草案只装 `python3-pip` | 即使绕过 1、2，也会大面积 `ModuleNotFoundError` |
+| 4 | 未设置 `EIP_PYTHON` | `check.sh` 第 5-6 行按该变量选解释器，未设置则回退系统 `python3`（无 `jsonschema`） | 同上 |
+| 5 | `apt install nodejs npm` 在 Debian bookworm 上给的是 Node 18 | 既不满足规格书的 Node 22 LTS，也不满足 `ci.yml` 的 24 | 版本口径错位 |
+| 6 | 以 `root` 运行 | — | 违反「非 root 用户运行检查」 |
+| 7 | `CMD ["bash"]` | — | 违反「入口默认执行 `scripts/check.sh`，且可覆盖命令」 |
+| 8 | `COPY . .` 之后才装依赖 | — | 无依赖分层，任何源码改动都击穿依赖缓存 |
+| 9 | 完全没有依赖预热（无 `cargo fetch` / `dotnet restore` / npm 缓存固化） | — | 运行期必须联网，做不到 `--network=none` 离线校验 |
+
+若确实想要一个**轻量交互镜像**（构建快、体积小、进容器手工排查）作为补充，最小修改集是：
+换成 `mcr.microsoft.com/dotnet/sdk:10.0.401-noble`（或裸 `10.0.401`）、
+`npm --prefix apps/web-console ci`、`pip install -r requirements-dev.txt` 并导出 `EIP_PYTHON`、
+改用官方 Node tarball 装 22/24、建非 root 用户、入口指向 `scripts/check.sh`、
+把依赖安装前置到 `COPY` 源码之前。但那已经是**另一套需要独立验收的镜像**，属于增量需求，本次未做。
