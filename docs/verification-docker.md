@@ -240,6 +240,11 @@ Bundle 与 trace 契约 Schema 校验、`scripts` 单元测试、文档链接检
    如果你的工作区有未跟踪但被文档链接引用的文件，容器内检查可能报缺失，这是预期行为。
 4. **未提交的本地改动会被带进镜像**：`COPY . .` 复制的是当前工作区（受 `.dockerignore` 过滤），
    与 CI 的「干净 checkout」不同。要复现 CI 结论，请先 `git stash` 或改用干净 clone 作为 context。
+   实测对照（2026-10-17）：本机工作区带着未提交的 `apps/web-console/tests/onboarding-api.test.mjs`
+   新增用例（10 个 `test()` vs `HEAD` 的 6 个，差 4），因此
+   **本机 arm64 容器报 `node --test` 159 pass / 0 fail，而 GitHub Actions（干净 checkout）报 155 pass / 0 fail**。
+   差值恰好等于未提交改动新增的用例数 —— 这不是平台（arm64/amd64）或 Node 版本的差异。
+   两侧都 0 fail，说明 Node 24 与本机 Node 22 的结论一致。
 5. **镜像体积较大**（完整 Rust + .NET SDK + Node + 预装依赖），这是「运行期可离线」的代价；
    它是校验镜像，不应作为运行镜像分发。
 
