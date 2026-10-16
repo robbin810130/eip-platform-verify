@@ -1,0 +1,81 @@
+# =============================================================================
+# Maka EIP —— 验证镜像的 compose 定义（可选，等价于 docker build / docker run）
+# =============================================================================
+#
+# 用途：本地与 CI 复现 scripts/check.sh 的离线校验结果。
+#
+# 安全边界（与 Dockerfile 一致）：
+#   * 不部署服务、不暴露端口、不连接生产、不连接真实 SQL Server
+#   * 不内置任何凭据，不读取宿主的 .env / SSH key
+#   * 不挂载宿主 Docker socket，不挂载任何宿主目录
+#   * 默认 network_mode: none —— 校验不依赖网络
+#
+# 用法：
+#   docker compose -f docker-compose.verify.yml build verify
+#   docker compose -f docker-compose.verify.yml run --rm verify
+#   docker compose -f docker-compose.verify.yml run --rm verify bash
+#   docker compose -f docker-compose.verify.yml run --rm verify \
+#     scripts/cargo.sh run --locked -p eip-cli -- inspect fixtures/demo/bundle.json
+#
+# 注意：`run` 每次都是新容器；--rm 立即清理。镜像里的依赖已在构建阶段预热，
+#       因此离线（network_mode: none）即可跑完完整校验。
+# =============================================================================
+
+name: eip-platform-verify
+
+x-verify-common: &verify-common
+  image: eip-platform-verify:2026-10-16
+  build:
+    context: .
+    dockerfile: Dockerfile
+    args:
+      # 需要国内镜像源时可覆盖，例如 docker.m.daocloud.io/library/ubuntu:24.04
+      BASE_IMAGE: ubuntu:24.04
+      RUST_VERSION: "1.90.0"
+      DOTNET_SDK_VERSION: "10.0.401"
+      NODE_VERSION: "22.23.3"
+    # 私有依赖走临时 BuildKit secret，不写入镜像层；没有该文件时不启用。
+    # secrets:
+    #   - netrc
+  # 只读挂载宿主目录（可选）：把产物带出来，容器内不写宿主。
+  #   docker compose ... run --rm verify  # 需要时将下面两行解注释并改路径
+  # volumes:
+  #   - ./artifacts/verify:/workspace/artifacts:ro
+  security_opt:
+    - no-new-privileges:true
+  environment:
+    TZ: Asia/Shanghai
+    LANG: C.UTF-8
+    LC_ALL: C.UTF-8
+
+services:
+  # 默认服务：离线跑完整校验入口 scripts/check.sh
+  verify:
+    <<: *verify-common
+    container_name: eip-verify-offline
+    network_mode: "none"
+    # 不写 command：交给镜像 ENTRYPOINT 决定（无参数 → scripts/check.sh）
+
+  # 覆盖命令：交互式/任意命令，仍然离线
+  verify-command:
+    <<: *verify-common
+    profiles: ["command"]
+    container_name: eip-verify-command
+    network_mode: "none"
+    entrypoint: ["/bin/bash"]
+    command: ["-lc", "bash"]
+    stdin_open: true
+    tty: true
+
+  # 需要联网的场景（例如排查镜像自身问题、重新恢复依赖），
+  # 默认不启用，必须显式加 --profile online。
+  verify-online:
+    <<: *verify-common
+    profiles: ["online"]
+    container_name: eip-verify-online
+    # 不加 network_mode：使用 compose 默认网络（仅出网，无端口暴露）
+
+# 私有依赖声明（与上面的 secrets 注释配套，默认不启用）：
+# secrets:
+#   netrc:
+#     file: ${HOME}/.netrc

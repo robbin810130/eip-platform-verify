@@ -1,0 +1,77 @@
+# Build context 白名单。
+#
+# 规则语义：Docker 取「最后一条匹配的规则」，因此先 `**` 全排除，再用 `!`
+# 逐个放行，最后再次排除构建产物与本地缓存。
+#
+# 本文件同时被两个 image 共用（build context 都是仓库根）：
+#   1. deploy/orbstack/Dockerfile —— 本机运行镜像（多阶段 + 显式 COPY 产物）
+#   2. Dockerfile                 —— 仅用于本地/CI 的验证镜像（需要完整源码树）
+# 因此这里只能扩充白名单，不能缩减原有条目。放行更多路径只会让 context 变大，
+# 不会进入任何镜像层，因为两个 Dockerfile 都使用显式 COPY。
+
+# ---------- 1. 默认全排除 ----------
+**
+
+# ---------- 2. 放行验证与构建所需路径 ----------
+!Cargo.toml
+!Cargo.lock
+!rust-toolchain.toml
+!global.json
+!requirements-dev.txt
+!*.md
+!crates/**
+!contracts/**
+!adapters/**
+!apps/**
+!agents/**
+!deploy/**
+!docker/**
+!docs/**
+!fixtures/**
+!scripts/**
+!tasks/**
+!tests/**
+
+# ---------- 3. 白名单内再次排除：构建产物 / 本地缓存 / 临时状态 ----------
+# 这些路径都由 .gitignore 忽略或本身就是本地残留（未跟踪），排除后镜像内容
+# 等价于一次干净的 git checkout，与 CI 行为一致。
+# 仓库根 artifacts(1.9G) 与 .tools(2.5G)、target(1.5G) 从未进入白名单，天然被排除。
+**/bin
+**/obj
+**/target
+**/node_modules
+**/dist
+**/artifacts
+**/.npm-cache
+**/.tmp
+**/.test-artifacts
+**/.venv
+**/venv
+**/__pycache__
+**/.pytest_cache
+**/*.pyc
+**/.DS_Store
+apps/web-console/test-results
+apps/web-console/playwright-report
+# 本地意外遗留目录（未被 git 跟踪、CI 上不存在），含 91MB 的 target 残留。
+# 不加这一条会让镜像比一次干净 checkout 多出该目录，故显式排除。
+crates/trace/tests/standalone
+# 版本库元数据：镜像不需要，且体积大。
+.git
+# CI 定义不参与容器内校验（check.sh 不读取它），保持 context 精简。
+.github
+# 本机私有配置与凭据（即使被放进白名单也强制排除）
+.tools
+artifacts
+target
+.venv
+env
+.env
+.env.*
+*.pem
+*.pfx
+*.key
+id_rsa*
+id_ed25519*
+.netrc
+credentials.toml
