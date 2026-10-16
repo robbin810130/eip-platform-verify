@@ -31,6 +31,9 @@
 !scripts/**
 !tasks/**
 !tests/**
+# check_docs.py 会校验 Markdown 里的本地链接；docs 引用了 .github/workflows/*.yml，
+# 因此必须放行。同时这也让镜像内容与一次干净的 git checkout 保持一致。
+!.github/**
 
 # ---------- 3. 白名单内再次排除：构建产物 / 本地缓存 / 临时状态 ----------
 # 这些路径都由 .gitignore 忽略或本身就是本地残留（未跟踪），排除后镜像内容
@@ -58,8 +61,6 @@ apps/web-console/playwright-report
 crates/trace/tests/standalone
 # 版本库元数据：镜像不需要，且体积大。
 .git
-# CI 定义不参与容器内校验（check.sh 不读取它），保持 context 精简。
-.github
 # 本机私有配置与凭据（即使被放进白名单也强制排除）
 .tools
 artifacts

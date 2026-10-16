@@ -33,7 +33,7 @@ x-verify-common: &verify-common
       BASE_IMAGE: ubuntu:24.04
       RUST_VERSION: "1.90.0"
       DOTNET_SDK_VERSION: "10.0.401"
-      NODE_VERSION: "22.23.3"
+      NODE_VERSION: "24.22.0"
     # 私有依赖走临时 BuildKit secret，不写入镜像层；没有该文件时不启用。
     # secrets:
     #   - netrc

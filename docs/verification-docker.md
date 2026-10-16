@@ -39,20 +39,22 @@ Python 报告测试与 CLI 比对、`npm ci` + Web 单元测试 + Web 构建。�
 | Rust | `1.90.0` | rustup 固定 toolchain，含 `rustfmt` + `clippy`（对应 `rust-toolchain.toml`） |
 | .NET SDK | `10.0.401` | 官方 `dotnet-install.sh --version` 钉死（对应 `global.json`） |
 | Python | `3.12` | Ubuntu 24.04 系统包；契约校验依赖装在独立 venv `/opt/eip-venv` |
-| Node.js | `22.23.3` (LTS "Jod") | 官方 tarball + `SHASUMS256.txt` SHA-256 校验，按 `dpkg --print-architecture` 选 x64/arm64 |
+| Node.js | `24.22.0` (LTS "Krypton") | 官方 tarball + `SHASUMS256.txt` SHA-256 校验，按 `dpkg --print-architecture` 选 x64/arm64；**与 `ci.yml` 的 `node-version: '24'` 对齐** |
 | 系统库 | `build-essential`、`pkg-config`、`git`、`curl`、`ca-certificates` | 加 .NET 运行时依赖 `libicu74`、`libssl3t64`、`libgssapi-krb5-2`、`zlib1g`、`libunwind8` |
 | 时区 / locale | `TZ=Asia/Shanghai`、`LANG=C.UTF-8` | 已写入 `/etc/localtime`、`/etc/timezone` |
 
 架构：`linux/amd64` 与 `linux/arm64` 均可构建（Node 分段选择架构，其余组件自动匹配）。
 
-> ⚠️ **已知不一致（未自行收敛，留待决定）**：本镜像的 Node.js 是 `22.23.3`，
-> 而 `.github/workflows/ci.yml` 用的是 `node-version: '24'`；仓库自带的部署镜像
-> `deploy/orbstack/Dockerfile` 用的是 `node:22-bookworm-slim` —— 仓库内部本就有 22 / 24 两种口径。
-> 现按交付规格书取 **22**。若要改成与 CI 的 24 完全对齐：
+> **Node 口径（与 CI 对齐）**：本镜像的 Node.js 是 `24.22.0`（LTS "Krypton"），
+> 即 `.github/workflows/ci.yml` 里 `node-version: '24'` 由 `setup-node` 解析到的最新 24.x。
+> 仓库自带的部署镜像 `deploy/orbstack/Dockerfile` 用的是 `node:22-bookworm-slim`，
+> 那属于**部署链路**的口径，与本验证镜像互不影响。
+>
+> 若要退回 22 LTS（例如与部署链路对齐）：
 >
 > ```sh
-> docker build --pull --build-arg NODE_VERSION=24.22.0 -t eip-platform-verify:2026-10-16 .
-> docker run --rm --network=none eip-platform-verify:2026-10-16   # 必须重新验收
+> docker build --pull --build-arg NODE_VERSION=22.23.3 -t eip-platform-verify:2026-10-16 .
+> docker run --rm --network=none eip-platform-verify:2026-10-16   # 换版本后必须重新验收
 > ```
 >
 > 受影响的是 `npm ci`、`npm test`（`node --test`）与 `vite build` 三步。
@@ -256,7 +258,7 @@ docker image rm eip-platform-verify:2026-10-16
 
 | 文件 | 改动 | 影响 |
 | --- | --- | --- |
-| `.dockerignore` | 只扩充白名单（新增 `scripts/`、`agents/`、`tests/`、`docs/`、`tasks/`、`docker/`、`fixtures/`、根级锁文件与 manifest），并补充排除未跟踪的本地残留目录 | `deploy/orbstack/Dockerfile` 的构建不受影响，只是 build context 略变大；未删除任何原有条目 |
+| `.dockerignore` | 只扩充白名单（新增 `scripts/`、`agents/`、`tests/`、`docs/`、`tasks/`、`docker/`、`fixtures/`、`.github/`、根级锁文件与 manifest），并补充排除未跟踪的本地残留目录 | `deploy/orbstack/Dockerfile` 的构建不受影响，只是 build context 略变大；未删除任何原有条目。`.github/` 必须放行：`check_docs.py` 校验 Markdown 里的本地链接目标，而 `docs/` 引用了工作流文件 |
 | `docs/README.md` | 技术文档导航新增一行指向本文 | 纯文档 |
 
 ## 10. 在 GitHub Actions 里验证（不需要本地容器运行时）
@@ -301,7 +303,7 @@ docker run --rm --network=none eip-platform-verify:ci
 | 2 | `RUN npm ci` 落在没有 `package.json` 的目录 | 仓库根目录**没有** `package.json`（Web 应用在 `apps/web-console`），而 `check.sh` 第 21 行用的是 `npm --prefix apps/web-console ci` | 构建期失败 |
 | 3 | 从不安装 Python 契约校验依赖 | `check.sh` 有 11 处 Python 调用，其中 6 个脚本 `import jsonschema`（`requirements-dev.txt` 固定 `jsonschema==4.25.1`）；草案只装 `python3-pip` | 即使绕过 1、2，也会大面积 `ModuleNotFoundError` |
 | 4 | 未设置 `EIP_PYTHON` | `check.sh` 第 5-6 行按该变量选解释器，未设置则回退系统 `python3`（无 `jsonschema`） | 同上 |
-| 5 | `apt install nodejs npm` 在 Debian bookworm 上给的是 Node 18 | 既不满足规格书的 Node 22 LTS，也不满足 `ci.yml` 的 24 | 版本口径错位 |
+| 5 | `apt install nodejs npm` 在 Debian bookworm 上给的是 Node 18 | 既不满足 `ci.yml` 的 `node-version: '24'`，也不满足本验证镜像的 `24.22.0` | 版本口径错位 |
 | 6 | 以 `root` 运行 | — | 违反「非 root 用户运行检查」 |
 | 7 | `CMD ["bash"]` | — | 违反「入口默认执行 `scripts/check.sh`，且可覆盖命令」 |
 | 8 | `COPY . .` 之后才装依赖 | — | 无依赖分层，任何源码改动都击穿依赖缓存 |

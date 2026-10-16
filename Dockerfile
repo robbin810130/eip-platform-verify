@@ -13,12 +13,12 @@
 #   * 不挂载宿主 Docker socket
 #   * 运行时不需要网络（依赖已在构建阶段预热，见下方「依赖预热」）
 #
-# 工具链版本（与 .github/workflows/ci.yml 对齐，Node 按规格书取 22 LTS）：
+# 工具链版本（与 .github/workflows/ci.yml 对齐）：
 #   * 基础镜像  ubuntu:24.04        （x86_64 / arm64 均可构建）
 #   * Rust      1.90.0              （rustup 固定，含 rustfmt + clippy）
 #   * .NET SDK  10.0.401            （global.json 锁定，target net10.0）
 #   * Python    3.12                （Ubuntu 24.04 自带）
-#   * Node.js   22.23.3 LTS (Jod)   （官方 tarball + SHA256 校验）
+#   * Node.js   24.22.0 LTS (Krypton)（官方 tarball + SHA256 校验）
 #
 # 构建（在仓库根目录，context 必须是仓库根）：
 #   docker build --pull -t eip-platform-verify:2026-10-16 .
@@ -45,7 +45,7 @@ FROM ${BASE_IMAGE}
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 ARG RUST_VERSION=1.90.0
 ARG DOTNET_SDK_VERSION=10.0.401
-ARG NODE_VERSION=22.23.3
+ARG NODE_VERSION=24.22.0
 
 # NuGet 审计开关。上游间接依赖 System.Security.Cryptography.Pkcs 9.0.11 存在新披露漏洞
 # （GHSA-2fmv-rv2c-59x7 / GHSA-846f-f764-76mx），而 csproj 同时开了 NuGetAudit=true 与
@@ -146,7 +146,8 @@ RUN set -eux; \
     rm -rf /tmp/dotnet-root /tmp/dotnet-install.sh
 
 # -----------------------------------------------------------------------------
-# 4. Node.js 22 LTS（官方 tarball + SHASUMS256.txt 校验，按构建架构选择）
+# 4. Node.js 24 LTS（官方 tarball + SHASUMS256.txt 校验，按构建架构选择）
+#    版本对齐 .github/workflows/ci.yml 的 node-version: '24'。
 # -----------------------------------------------------------------------------
 RUN set -eux; \
     cd /tmp; \
@@ -351,7 +352,7 @@ LABEL org.opencontainers.image.title="Maka EIP verify (local/CI only)" \
       org.opencontainers.image.base.name="docker.io/library/ubuntu:24.04" \
       org.maka-eip.verify.rust="1.90.0" \
       org.maka-eip.verify.dotnet-sdk="10.0.401" \
-      org.maka-eip.verify.node="22.23.3" \
+      org.maka-eip.verify.node="24.22.0" \
       org.maka-eip.verify.python="3.12" \
       org.maka-eip.verify.entrypoint="scripts/check.sh"
 

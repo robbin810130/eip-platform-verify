@@ -59,7 +59,7 @@ docker compose -f docker-compose.verify.yml run --rm verify
 | 基础镜像 | `ubuntu:24.04` | `--build-arg BASE_IMAGE=...` |
 | Rust | 1.90.0（minimal + rustfmt + clippy） | `--build-arg RUST_VERSION=...` |
 | .NET SDK | 10.0.401 | `--build-arg DOTNET_SDK_VERSION=...` |
-| Node.js | 22.23.3 LTS（官方 tarball + SHASUMS256 校验） | `--build-arg NODE_VERSION=...` |
+| Node.js | 24.22.0 LTS "Krypton"（与源仓库 CI 的 `node-version: '24'` 对齐；官方 tarball + SHASUMS256 校验） | `--build-arg NODE_VERSION=...` |
 | Python | 系统 3.12 + venv（`jsonschema`） | — |
 | 时区 / 编码 | `TZ=Asia/Shanghai`、`LANG=C.UTF-8` | — |
 | 运行身份 | `uid=1000(verify)`，非 root | `--build-arg VERIFY_UID=...` |
